@@ -99,6 +99,7 @@ func NewMachineConfig(opts define.InitOptions, dirs *define.MachineDirs, sshIden
 
 	mc.Subnet = opts.Subnet
 	mc.IP = opts.IP
+	mc.VLAN = opts.VLAN
 	return mc, nil
 }
 
