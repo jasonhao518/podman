@@ -10,7 +10,7 @@ function Get-Podman-Setup-From-GitHub {
     )
 
     Write-Host "Downloading the $version Podman windows setup from GitHub..."
-    $apiUrl = "https://api.github.com/repos/containers/podman/releases/$version"
+    $apiUrl = "https://api.github.com/repos/jasonhao518/podman/releases/$version"
     $response = Invoke-RestMethod -Uri $apiUrl -Headers @{"User-Agent"="PowerShell"} -ErrorAction Stop
     $downloadUrl = $response.assets[0].browser_download_url
     Write-Host "Downloading URL: $downloadUrl"
