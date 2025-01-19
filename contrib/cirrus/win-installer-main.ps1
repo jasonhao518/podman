@@ -22,7 +22,7 @@ Push-Location $WIN_INST_FOLDER
 # The v5.3.1 installer is also used to test the "v5.3.1 -> current" version minor
 # update (with patch).
 if (!$env:V531_SETUP_EXE_PATH) {
-    $env:V531_SETUP_EXE_PATH = Get-Podman-Setup-From-GitHub -version "tags/v5.3.5"
+    $env:V531_SETUP_EXE_PATH = Get-Podman-Setup-From-GitHub -version "tags/v5.3.1"
 }
 
 # Download the previous installer to test a major update (without patch)

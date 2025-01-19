@@ -57,7 +57,7 @@ function Build-531-Patch() {
 
     if (!$v531SetupExePath) {
       . $PSScriptRoot\utils.ps1
-      $v531SetupExePath=Get-Podman-Setup-From-GitHub "tags/v5.3.5"
+      $v531SetupExePath=Get-Podman-Setup-From-GitHub "tags/v5.3.1"
     }
     wix burn extract $v531SetupExePath -o $PSScriptRoot\prevPodmanMsi; ExitOnError
     Move-Item $PSScriptRoot\prevPodmanMsi\a1 $PSScriptRoot\en-US\prev-podman.wixpdb -Force; ExitOnError
@@ -70,7 +70,7 @@ if ($args.Count -lt 1 -or $args[0].Length -lt 1) {
     Write-Host
     Write-Host 'Uses Env Vars: '
     Write-Host '   $ENV:FETCH_BASE_URL - GitHub Repo Address to locate release on'
-    Write-Host '   $ENV:V531_SETUP_EXE_PATH - Path to v5.3.5 setup.exe used to build the patch'
+    Write-Host '   $ENV:V531_SETUP_EXE_PATH - Path to v5.3.1 setup.exe used to build the patch'
     Write-Host 'Env Settings for signing (optional)'
     Write-Host '   $ENV:VAULT_ID'
     Write-Host '   $ENV:APP_ID'
