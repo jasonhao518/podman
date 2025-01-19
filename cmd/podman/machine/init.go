@@ -141,6 +141,18 @@ func init() {
 	userModeNetFlagName := "user-mode-networking"
 	flags.BoolVar(&initOptionalFlags.UserModeNetworking, userModeNetFlagName, false,
 		"Whether this machine should use user-mode networking, routing traffic through a host user-space process")
+
+	SubnetFlagName := "subnet"
+	flags.StringVar(&initOpts.Subnet, SubnetFlagName, "192.168.127.0/24", "VM subnet")
+	_ = initCmd.RegisterFlagCompletionFunc(SubnetFlagName, completion.AutocompleteDefault)
+
+	IpFlagName := "ip"
+	flags.StringVar(&initOpts.IP, IpFlagName, "192.168.127.2", "VM ip address")
+	_ = initCmd.RegisterFlagCompletionFunc(IpFlagName, completion.AutocompleteDefault)
+
+	VLANFlagName := "vlan"
+	flags.StringVar(&initOpts.VLAN, VLANFlagName, "", "VM VLAN")
+	_ = initCmd.RegisterFlagCompletionFunc(VLANFlagName, completion.AutocompleteDefault)
 }
 
 func initMachine(cmd *cobra.Command, args []string) error {

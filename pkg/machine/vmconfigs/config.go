@@ -53,6 +53,10 @@ type MachineConfig struct {
 	Starting bool
 
 	Rosetta bool
+
+	IP     string
+	Subnet string
+	VLAN   string
 }
 
 type machineImage interface { //nolint:unused

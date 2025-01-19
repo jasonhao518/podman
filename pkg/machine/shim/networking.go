@@ -61,6 +61,10 @@ func startHostForwarder(mc *vmconfigs.MachineConfig, provider vmconfigs.VMProvid
 
 	cmd.SSHPort = mc.SSH.Port
 
+	cmd.IP = mc.IP
+	cmd.Subnet = mc.Subnet
+	cmd.VLAN = mc.VLAN
+
 	// Windows providers listen on multiple sockets since they do not involve links
 	for _, hostSock := range hostSocks {
 		cmd.AddForwardSock(hostSock)

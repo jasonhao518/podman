@@ -97,6 +97,8 @@ func NewMachineConfig(opts define.InitOptions, dirs *define.MachineDirs, sshIden
 
 	mc.HostUser = HostUser{UID: getHostUID(), Rootful: opts.Rootful}
 
+	mc.Subnet = opts.Subnet
+	mc.IP = opts.IP
 	return mc, nil
 }
 
