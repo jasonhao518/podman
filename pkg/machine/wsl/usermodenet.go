@@ -99,7 +99,11 @@ func startUserModeNetworking(mc *vmconfigs.MachineConfig) error {
 
 	// Start or reuse
 	if !running {
-		if err := launchUserModeNetDist(exe); err != nil {
+		env := os.Environ()                                    // Inherit parent environment
+		env = append(env, fmt.Sprintf("ip=%s", mc.IP))         // Add custom variable
+		env = append(env, fmt.Sprintf("subnet=%s", mc.Subnet)) // Add custom variable
+		env = append(env, fmt.Sprintf("vlan=%s", mc.VLAN))     // Add custom variable
+		if err := launchUserModeNetDist(exe, env); err != nil {
 			return err
 		}
 	}
@@ -147,7 +151,7 @@ func stopUserModeNetworking(mc *vmconfigs.MachineConfig) error {
 
 	fmt.Println("Stopping user-mode networking...")
 
-	err = wslPipe(stopUserModeNet, userModeDist, "bash")
+	err = wslPipe(stopUserModeNet, userModeDist, []string{}, "bash")
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			switch exitErr.ExitCode() {
@@ -168,7 +172,7 @@ func isGvProxyVMRunning() bool {
 	return wslInvoke(userModeDist, "bash", "-c", cmd) == nil
 }
 
-func launchUserModeNetDist(exeFile string) error {
+func launchUserModeNetDist(exeFile string, env []string) error {
 	fmt.Println("Starting user-mode networking...")
 
 	exe, err := specgen.ConvertWinMountPath(exeFile)
@@ -177,7 +181,7 @@ func launchUserModeNetDist(exeFile string) error {
 	}
 
 	cmdStr := fmt.Sprintf("GVPROXY=%q\nGVFORWARDER=%q\n%s", exe, gvForwarderPath, startUserModeNet)
-	if err := wslPipe(cmdStr, userModeDist, "bash"); err != nil {
+	if err := wslPipe(cmdStr, userModeDist, env, "bash"); err != nil {
 		_ = terminateDist(userModeDist)
 
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -233,7 +237,7 @@ func installUserModeDist(dist string, imagePath string) error {
 }
 
 func createUserModeResolvConf(dist string) error {
-	err := wslPipe(resolvConfUserNet, dist, "bash", "-c", "(rm -f /etc/resolv.conf; cat > /etc/resolv.conf)")
+	err := wslPipe(resolvConfUserNet, dist, []string{}, "bash", "-c", "(rm -f /etc/resolv.conf; cat > /etc/resolv.conf)")
 	if err != nil {
 		return fmt.Errorf("could not create resolv.conf: %w", err)
 	}
@@ -361,7 +365,7 @@ func changeDistUserModeNetworking(dist string, user string, image string, enable
 }
 
 func appendDisableAutoResolve(dist string) error {
-	if err := wslPipe(wslConfUserNet, dist, "sh", "-c", "cat >> /etc/wsl.conf"); err != nil {
+	if err := wslPipe(wslConfUserNet, dist, []string{}, "sh", "-c", "cat >> /etc/wsl.conf"); err != nil {
 		return fmt.Errorf("could not append resolv config to wsl.conf: %w", err)
 	}
 
