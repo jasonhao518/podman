@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,9 +98,19 @@ func NewMachineConfig(opts define.InitOptions, dirs *define.MachineDirs, sshIden
 
 	mc.HostUser = HostUser{UID: getHostUID(), Rootful: opts.Rootful}
 
-	mc.Subnet = opts.Subnet
-	mc.IP = opts.IP
+	ip, subnet, _ := calculateIpAndSubnet(opts.IP)
+	mc.Subnet = subnet
+	mc.VLAN = opts.VLAN
+	mc.IP = ip
 	return mc, nil
+}
+
+func calculateIpAndSubnet(cidr string) (string, string, error) {
+	// Parse the CIDR block
+	ip, ipNet, err := net.ParseCIDR(cidr)
+
+	// Return the IP address and the CIDR block
+	return ip.String(), ipNet.String(), err
 }
 
 // Lock creates a lock on the machine for single access
