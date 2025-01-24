@@ -4,99 +4,117 @@ package k3s
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/containers/common/pkg/completion"
-	"github.com/containers/common/pkg/strongunits"
 	"github.com/containers/podman/v5/cmd/podman/registry"
-	ldefine "github.com/containers/podman/v5/libpod/define"
-	"github.com/containers/podman/v5/libpod/events"
+	"github.com/containers/podman/v5/cmd/podman/utils"
 	define "github.com/containers/podman/v5/pkg/k3s/define"
+	"github.com/containers/podman/v5/pkg/machine"
+	define2 "github.com/containers/podman/v5/pkg/machine/define"
+	"github.com/containers/podman/v5/pkg/machine/env"
+	"github.com/containers/podman/v5/pkg/machine/vmconfigs"
 	"github.com/spf13/cobra"
 )
 
 var (
 	joinCmd = &cobra.Command{
-		Use:               "join [options] [NAME]",
-		Short:             "join a k3s cluster",
-		Long:              "join a k3s cluster",
+		Use:               "join [options] [NAME] [COMMAND [ARG ...]]",
+		Short:             "join k3s cluster",
+		Long:              "join k3s cluster",
 		PersistentPreRunE: machinePreRunE,
-		RunE:              joinMachine,
-		Args:              cobra.MaximumNArgs(1),
-		Example:           `podman k3s join podman-machine-default`,
-		ValidArgsFunction: completion.AutocompleteNone,
+		RunE:              join,
+		Example: `podman k3s join podman-machine-default
+  podman k3s init`,
+		ValidArgsFunction: autocompleteMachineSSH,
 	}
-
-	joinOpts          = define.JoinOptions{}
-	joinOptionalFlags = JoinOptionalFlags{}
 )
 
-// Flags which have a meaning when unspecified that differs from the flag default
-type JoinOptionalFlags struct {
-	UserModeNetworking bool
-}
+var (
+	joinOpts define.JoinOptions
+)
 
 func init() {
+	joinCmd.Flags().SetInterspersed(false)
 	registry.Commands = append(registry.Commands, registry.CliCommand{
 		Command: joinCmd,
 		Parent:  k3sCmd,
 	})
+	flags := joinCmd.Flags()
+	cfg := registry.PodmanConfig()
+
+	TokenFlagName := "token"
+	flags.StringVar(&joinOpts.Token, TokenFlagName, cfg.ContainersConfDefaultsRO.Machine.User, "Username used in image")
+	_ = initCmd.RegisterFlagCompletionFunc(TokenFlagName, completion.AutocompleteDefault)
 
 }
 
-func joinMachine(cmd *cobra.Command, args []string) error {
+// TODO Remember that this changed upstream and needs to updated as such!
 
-	if !ldefine.NameRegex.MatchString(joinOpts.Username) {
-		return fmt.Errorf("invalid username %q: %w", joinOpts.Username, ldefine.RegexError)
-	}
+func join(cmd *cobra.Command, args []string) error {
+	var (
+		err     error
+		mc      *vmconfigs.MachineConfig
+		validVM bool
+	)
 
-	// check if a system connection already exists
-	cons, err := registry.PodmanConfig().ContainersConfDefaultsRO.GetAllConnections()
+	dirs, err := env.GetMachineDirs(provider.VMType())
 	if err != nil {
 		return err
 	}
-	for _, con := range cons {
-		if con.ReadWrite {
-			for _, connection := range []string{joinOpts.Name, fmt.Sprintf("%s-root", joinOpts.Name)} {
-				if con.Name == connection {
-					return fmt.Errorf("system connection %q already exists. consider a different machine name or remove the connection with `podman system connection rm`", connection)
-				}
-			}
+
+	// Set the VM to default
+	vmName := defaultMachineName
+	// If len is greater than 0, it means we may have been
+	// provided the VM name.  If so, we check.  The VM name,
+	// if provided, must be in args[0].
+	if len(args) > 0 {
+		// note: previous incantations of this up by a specific name
+		// and errors were ignored.  this error is not ignored because
+		// it implies podman cannot read its machine files, which is bad
+		machines, err := vmconfigs.LoadMachinesInDir(dirs)
+		if err != nil {
+			return err
+		}
+
+		mc, validVM = machines[args[0]]
+		if validVM {
+			vmName = args[0]
+			joinOpts.Master = args[1]
+		} else {
+			//initOpts.Args = append(initOpts.Args, args[0])
+			joinOpts.Master = args[0]
 		}
 	}
 
-	for idx, vol := range joinOpts.Volumes {
-		joinOpts.Volumes[idx] = os.ExpandEnv(vol)
+	// If the machine config was not loaded earlier, we load it now
+	if mc == nil {
+		mc, err = vmconfigs.LoadMachineByName(vmName, dirs)
+		if err != nil {
+			return fmt.Errorf("vm %s not found: %w", vmName, err)
+		}
 	}
 
-	// Process optional flags (flags where unspecified / nil has meaning )
-	if cmd.Flags().Changed("user-mode-networking") {
-		joinOpts.UserModeNetworking = &joinOptionalFlags.UserModeNetworking
-	}
-
-	if cmd.Flags().Changed("memory") {
-		if err := checkMaxMemory(strongunits.MiB(joinOpts.Memory)); err != nil {
+	if !validVM && initOpts.Username == "" {
+		initOpts.Username, err = remoteConnectionUsername()
+		if err != nil {
 			return err
 		}
 	}
 
-	// TODO need to work this back in
-	// if finished, err := vm.Init(joinOpts); err != nil || !finished {
-	// 	// Finished = true,  err  = nil  -  Success! Log a message with further instructions
-	// 	// Finished = false, err  = nil  -  The installation is partially complete and podman should
-	// 	//                                  exit gracefully with no error and no success message.
-	// 	//                                  Examples:
-	// 	//                                  - a user has chosen to perform their own reboot
-	// 	//                                  - reexec for limited admin operations, returning to parent
-	// 	// Finished = *,     err != nil  -  Exit with an error message
-	// 	return err
-	// }
+	state, err := provider.State(mc, false)
+	if err != nil {
+		return err
+	}
+	if state != define2.Running {
+		return fmt.Errorf("vm %q is not running", mc.Name)
+	}
 
-	newMachineEvent(events.Init, events.Event{Name: joinOpts.Name})
-	fmt.Println("Machine init complete")
+	username := initOpts.Username
+	if username == "" {
+		username = mc.SSH.RemoteUsername
+	}
 
-	extra := ""
-
-	fmt.Printf("To start your machine run:\n\n\tpodman machine start%s\n\n", extra)
-	return err
+	initOpts.Args = []string{"curl -sfL https://get.k3s.io | K3S_URL=\"https://" + joinOpts.Master + ":6443\" K3S_TOKEN=\"" + joinOpts.Token + "\" sh -"}
+	err = machine.CommonSSHShell(username, mc.SSH.IdentityPath, mc.Name, mc.SSH.Port, initOpts.Args)
+	return utils.HandleOSExecError(err)
 }

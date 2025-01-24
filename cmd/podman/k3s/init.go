@@ -4,211 +4,124 @@ package k3s
 
 import (
 	"fmt"
-	"os"
+	"net/url"
 
-	"github.com/containers/common/pkg/completion"
-	"github.com/containers/common/pkg/strongunits"
 	"github.com/containers/podman/v5/cmd/podman/registry"
-	"github.com/containers/podman/v5/libpod/events"
+	"github.com/containers/podman/v5/cmd/podman/utils"
 	define "github.com/containers/podman/v5/pkg/k3s/define"
-	"github.com/shirou/gopsutil/v4/mem"
-	"github.com/sirupsen/logrus"
+	"github.com/containers/podman/v5/pkg/machine"
+	define2 "github.com/containers/podman/v5/pkg/machine/define"
+	"github.com/containers/podman/v5/pkg/machine/env"
+	"github.com/containers/podman/v5/pkg/machine/vmconfigs"
 	"github.com/spf13/cobra"
 )
 
 var (
 	initCmd = &cobra.Command{
-		Use:               "init [options] [NAME]",
-		Short:             "Initialize a k3s cluster",
-		Long:              "Initialize a k3s cluster",
+		Use:               "init [options] [NAME] [COMMAND [ARG ...]]",
+		Short:             "init k3s cluster",
+		Long:              "init k3s cluster",
 		PersistentPreRunE: machinePreRunE,
-		RunE:              initMachine,
-		Args:              cobra.MaximumNArgs(1),
-		Example:           `podman machine init podman-machine-default`,
-		ValidArgsFunction: completion.AutocompleteNone,
+		RunE:              ssh,
+		Example: `podman k3s int podman-machine-default
+  podman k3s init`,
+		ValidArgsFunction: autocompleteMachineSSH,
 	}
-
-	initOpts          = define.InitOptions{}
-	initOptionalFlags = InitOptionalFlags{}
-	now               bool
 )
 
-// Flags which have a meaning when unspecified that differs from the flag default
-type InitOptionalFlags struct {
-	UserModeNetworking bool
-}
-
-// maxMachineNameSize is set to thirty to limit huge machine names primarily
-// because macOS has a much smaller file size limit.
-const maxMachineNameSize = 30
+var (
+	initOpts           define.InitOptions
+	defaultMachineName = define.DefaultMachineName
+)
 
 func init() {
+	initCmd.Flags().SetInterspersed(false)
 	registry.Commands = append(registry.Commands, registry.CliCommand{
 		Command: initCmd,
 		Parent:  k3sCmd,
 	})
-	flags := initCmd.Flags()
-	cfg := registry.PodmanConfig()
 
-	cpusFlagName := "cpus"
-	flags.Uint64Var(
-		&initOpts.CPUS,
-		cpusFlagName, cfg.ContainersConfDefaultsRO.Machine.CPUs,
-		"Number of CPUs",
-	)
-	_ = initCmd.RegisterFlagCompletionFunc(cpusFlagName, completion.AutocompleteNone)
-
-	diskSizeFlagName := "disk-size"
-	flags.Uint64Var(
-		&initOpts.DiskSize,
-		diskSizeFlagName, cfg.ContainersConfDefaultsRO.Machine.DiskSize,
-		"Disk size in GiB",
-	)
-
-	_ = initCmd.RegisterFlagCompletionFunc(diskSizeFlagName, completion.AutocompleteNone)
-
-	memoryFlagName := "memory"
-	flags.Uint64VarP(
-		&initOpts.Memory,
-		memoryFlagName, "m", cfg.ContainersConfDefaultsRO.Machine.Memory,
-		"Memory in MiB",
-	)
-	_ = initCmd.RegisterFlagCompletionFunc(memoryFlagName, completion.AutocompleteNone)
-
-	flags.BoolVar(
-		&now,
-		"now", false,
-		"Start machine now",
-	)
-	timezoneFlagName := "timezone"
-	defaultTz := cfg.ContainersConfDefaultsRO.TZ()
-	if len(defaultTz) < 1 {
-		defaultTz = "local"
-	}
-	flags.StringVar(&initOpts.TimeZone, timezoneFlagName, defaultTz, "Set timezone")
-	_ = initCmd.RegisterFlagCompletionFunc(timezoneFlagName, completion.AutocompleteDefault)
-
-	flags.BoolVar(
-		&initOpts.ReExec,
-		"reexec", false,
-		"process was rexeced",
-	)
-	_ = flags.MarkHidden("reexec")
-
-	UsernameFlagName := "username"
-	flags.StringVar(&initOpts.Username, UsernameFlagName, cfg.ContainersConfDefaultsRO.Machine.User, "Username used in image")
-	_ = initCmd.RegisterFlagCompletionFunc(UsernameFlagName, completion.AutocompleteDefault)
-
-	ImageFlagName := "image"
-	flags.StringVar(&initOpts.Image, ImageFlagName, cfg.ContainersConfDefaultsRO.Machine.Image, "Bootable image for machine")
-	_ = initCmd.RegisterFlagCompletionFunc(ImageFlagName, completion.AutocompleteDefault)
-
-	// Deprecate image-path option, use --image instead
-	ImagePathFlagName := "image-path"
-	flags.StringVar(&initOpts.Image, ImagePathFlagName, cfg.ContainersConfDefaultsRO.Machine.Image, "Bootable image for machine")
-	_ = initCmd.RegisterFlagCompletionFunc(ImagePathFlagName, completion.AutocompleteDefault)
-	if err := flags.MarkDeprecated(ImagePathFlagName, "use --image instead"); err != nil {
-		logrus.Error("unable to mark image-path flag deprecated")
-	}
-
-	VolumeFlagName := "volume"
-	flags.StringArrayVarP(&initOpts.Volumes, VolumeFlagName, "v", cfg.ContainersConfDefaultsRO.Machine.Volumes.Get(), "Volumes to mount, source:target")
-	_ = initCmd.RegisterFlagCompletionFunc(VolumeFlagName, completion.AutocompleteDefault)
-
-	USBFlagName := "usb"
-	flags.StringArrayVarP(&initOpts.USBs, USBFlagName, "", []string{},
-		"USB Host passthrough: bus=$1,devnum=$2 or vendor=$1,product=$2")
-	_ = initCmd.RegisterFlagCompletionFunc(USBFlagName, completion.AutocompleteDefault)
-
-	VolumeDriverFlagName := "volume-driver"
-	flags.String(VolumeDriverFlagName, "", "Optional volume driver")
-	_ = initCmd.RegisterFlagCompletionFunc(VolumeDriverFlagName, completion.AutocompleteDefault)
-	if err := flags.MarkDeprecated(VolumeDriverFlagName, "will be ignored"); err != nil {
-		logrus.Error("unable to mark volume-driver flag deprecated")
-	}
-
-	IgnitionPathFlagName := "ignition-path"
-	flags.StringVar(&initOpts.IgnitionPath, IgnitionPathFlagName, "", "Path to ignition file")
-	_ = initCmd.RegisterFlagCompletionFunc(IgnitionPathFlagName, completion.AutocompleteDefault)
-
-	rootfulFlagName := "rootful"
-	flags.BoolVar(&initOpts.Rootful, rootfulFlagName, false, "Whether this machine should prefer rootful container execution")
-
-	userModeNetFlagName := "user-mode-networking"
-	flags.BoolVar(&initOptionalFlags.UserModeNetworking, userModeNetFlagName, false,
-		"Whether this machine should use user-mode networking, routing traffic through a host user-space process")
-
-	IpFlagName := "ip"
-	flags.StringVar(&initOpts.IP, IpFlagName, "192.168.127.2/24", "VM ip address")
-	_ = initCmd.RegisterFlagCompletionFunc(IpFlagName, completion.AutocompleteDefault)
-
-	VLANFlagName := "vlan"
-	flags.StringVar(&initOpts.VLAN, VLANFlagName, "", "VM VLAN")
-	_ = initCmd.RegisterFlagCompletionFunc(VLANFlagName, completion.AutocompleteDefault)
 }
 
-func initMachine(cmd *cobra.Command, args []string) error {
+// TODO Remember that this changed upstream and needs to updated as such!
 
-	// check if a system connection already exists
-	cons, err := registry.PodmanConfig().ContainersConfDefaultsRO.GetAllConnections()
+func ssh(cmd *cobra.Command, args []string) error {
+	var (
+		err     error
+		mc      *vmconfigs.MachineConfig
+		validVM bool
+	)
+
+	dirs, err := env.GetMachineDirs(provider.VMType())
 	if err != nil {
 		return err
 	}
-	for _, con := range cons {
-		if con.ReadWrite {
-			for _, connection := range []string{initOpts.Name, fmt.Sprintf("%s-root", initOpts.Name)} {
-				if con.Name == connection {
-					return fmt.Errorf("system connection %q already exists. consider a different machine name or remove the connection with `podman system connection rm`", connection)
-				}
-			}
+
+	// Set the VM to default
+	vmName := defaultMachineName
+	// If len is greater than 0, it means we may have been
+	// provided the VM name.  If so, we check.  The VM name,
+	// if provided, must be in args[0].
+	if len(args) > 0 {
+		// note: previous incantations of this up by a specific name
+		// and errors were ignored.  this error is not ignored because
+		// it implies podman cannot read its machine files, which is bad
+		machines, err := vmconfigs.LoadMachinesInDir(dirs)
+		if err != nil {
+			return err
+		}
+
+		mc, validVM = machines[args[0]]
+		if validVM {
+			vmName = args[0]
+		} else {
+			//initOpts.Args = append(initOpts.Args, args[0])
 		}
 	}
 
-	for idx, vol := range initOpts.Volumes {
-		initOpts.Volumes[idx] = os.ExpandEnv(vol)
+	// If the machine config was not loaded earlier, we load it now
+	if mc == nil {
+		mc, err = vmconfigs.LoadMachineByName(vmName, dirs)
+		if err != nil {
+			return fmt.Errorf("vm %s not found: %w", vmName, err)
+		}
 	}
 
-	// Process optional flags (flags where unspecified / nil has meaning )
-	if cmd.Flags().Changed("user-mode-networking") {
-		initOpts.UserModeNetworking = &initOptionalFlags.UserModeNetworking
-	}
-
-	if cmd.Flags().Changed("memory") {
-		if err := checkMaxMemory(strongunits.MiB(initOpts.Memory)); err != nil {
+	if !validVM && initOpts.Username == "" {
+		initOpts.Username, err = remoteConnectionUsername()
+		if err != nil {
 			return err
 		}
 	}
 
-	// TODO need to work this back in
-	// if finished, err := vm.Init(initOpts); err != nil || !finished {
-	// 	// Finished = true,  err  = nil  -  Success! Log a message with further instructions
-	// 	// Finished = false, err  = nil  -  The installation is partially complete and podman should
-	// 	//                                  exit gracefully with no error and no success message.
-	// 	//                                  Examples:
-	// 	//                                  - a user has chosen to perform their own reboot
-	// 	//                                  - reexec for limited admin operations, returning to parent
-	// 	// Finished = *,     err != nil  -  Exit with an error message
-	// 	return err
-	// }
-
-	newMachineEvent(events.Init, events.Event{Name: initOpts.Name})
-	fmt.Println("Machine init complete")
-
-	extra := ""
-
-	fmt.Printf("To start your machine run:\n\n\tpodman machine start%s\n\n", extra)
-	return err
-}
-
-// checkMaxMemory gets the total system memory and compares it to the variable.  if the variable
-// is larger than the total memory, it returns an error
-func checkMaxMemory(newMem strongunits.MiB) error {
-	memStat, err := mem.VirtualMemory()
+	state, err := provider.State(mc, false)
 	if err != nil {
 		return err
 	}
-	if total := strongunits.B(memStat.Total); strongunits.B(memStat.Total) < newMem.ToBytes() {
-		return fmt.Errorf("requested amount of memory (%d MB) greater than total system memory (%d MB)", newMem, total)
+	if state != define2.Running {
+		return fmt.Errorf("vm %q is not running", mc.Name)
 	}
-	return nil
+
+	username := initOpts.Username
+	if username == "" {
+		username = mc.SSH.RemoteUsername
+	}
+
+	initOpts.Args = []string{"curl -sfL https://get.k3s.io | sh -"}
+	err = machine.CommonSSHShell(username, mc.SSH.IdentityPath, mc.Name, mc.SSH.Port, initOpts.Args)
+	return utils.HandleOSExecError(err)
+}
+
+func remoteConnectionUsername() (string, error) {
+	con, err := registry.PodmanConfig().ContainersConfDefaultsRO.GetConnection("", true)
+	if err != nil {
+		return "", err
+	}
+
+	uri, err := url.Parse(con.URI)
+	if err != nil {
+		return "", err
+	}
+	username := uri.User.String()
+	return username, nil
 }
