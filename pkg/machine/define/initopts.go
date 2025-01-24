@@ -21,4 +21,5 @@ type InitOptions struct {
 	USBs               []string
 	IP                 string
 	VLAN               string
+	Password           string
 }

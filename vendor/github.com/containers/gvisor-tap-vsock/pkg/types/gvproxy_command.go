@@ -31,9 +31,10 @@ type GvproxyCommand struct {
 	// SSHPort to access the guest VM
 	SSHPort int
 
-	IP     string
-	Subnet string
-	VLAN   string
+	IP       string
+	Subnet   string
+	VLAN     string
+	Password string
 }
 
 func NewGvproxyCommand() GvproxyCommand {
@@ -194,6 +195,7 @@ func (c *GvproxyCommand) ToCmdline() []string {
 	args = append(args, "-ip", c.IP)
 	args = append(args, "-subnet", c.Subnet)
 	args = append(args, "-vlan", c.VLAN)
+	args = append(args, "-password", c.Password)
 
 	return args
 }

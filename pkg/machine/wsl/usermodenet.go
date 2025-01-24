@@ -101,10 +101,11 @@ func startUserModeNetworking(mc *vmconfigs.MachineConfig) error {
 
 	// Start or reuse
 	if !running {
-		env := os.Environ()                                    // Inherit parent environment
-		env = append(env, fmt.Sprintf("ip=%s", mc.IP))         // Add custom variable
-		env = append(env, fmt.Sprintf("subnet=%s", mc.Subnet)) // Add custom variable
-		env = append(env, fmt.Sprintf("vlan=%s", mc.VLAN))     // Add custom variable
+		env := os.Environ()                                        // Inherit parent environment
+		env = append(env, fmt.Sprintf("ip=%s", mc.IP))             // Add custom variable
+		env = append(env, fmt.Sprintf("subnet=%s", mc.Subnet))     // Add custom variable
+		env = append(env, fmt.Sprintf("vlan=%s", mc.VLAN))         // Add custom variable
+		env = append(env, fmt.Sprintf("password=%s", mc.Password)) // Add custom variable
 		if err := launchUserModeNetDist(exe, mc.Subnet, env); err != nil {
 			return err
 		}

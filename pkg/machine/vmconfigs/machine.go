@@ -101,6 +101,7 @@ func NewMachineConfig(opts define.InitOptions, dirs *define.MachineDirs, sshIden
 	ip, subnet, _ := calculateIpAndSubnet(opts.IP)
 	mc.Subnet = subnet
 	mc.VLAN = opts.VLAN
+	mc.Password = opts.Password
 	mc.IP = ip
 	return mc, nil
 }
