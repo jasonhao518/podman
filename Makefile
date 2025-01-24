@@ -593,10 +593,7 @@ podman-remote-%-docs: podman-remote
 	rm -rf docs/build/remote
 	mkdir -p docs/build/remote
 	ln -sf $(CURDIR)/docs/source/markdown/links docs/build/man/
-	docs/remote-docs.sh \
-		$(GOOS) \
-		docs/build/remote/$* \
-		$(if $(findstring windows,$*),docs/source/markdown,docs/build/man)
+
 
 .PHONY: man-page-check
 man-page-check: man-page-checker xref-helpmsgs-manpages xref-quadlet-docs xref-quadlet-docs
@@ -850,7 +847,6 @@ podman-remote-release-%.zip: test/version/version ## Build podman-remote for %=$
 	if [[ "$(GOOS)" == "darwin" ]]; then \
 		$(MAKE) $(GOPLAT) podman-mac-helper;\
 	fi
-	cp -r ./docs/build/remote/$(GOOS) "$(tmpsubdir)/$(releasedir)/docs/"
 	cp ./contrib/remote/containers.conf "$(tmpsubdir)/$(releasedir)/"
 	$(MAKE) $(GOPLAT) $(_dstargs) SELINUXOPT="" install.remote
 	cd "$(tmpsubdir)" && \
