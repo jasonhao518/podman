@@ -212,6 +212,10 @@ func initMachine(cmd *cobra.Command, args []string) error {
 	if cmd.Flags().Changed("user-mode-networking") {
 		initOpts.UserModeNetworking = &initOptionalFlags.UserModeNetworking
 	} else if runtime.GOOS == "windows" {
+		//*initOpts.UserModeNetworking = true
+		if initOpts.UserModeNetworking == nil {
+			initOpts.UserModeNetworking = new(bool)
+		}
 		*initOpts.UserModeNetworking = true
 	}
 

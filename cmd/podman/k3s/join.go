@@ -3,7 +3,9 @@
 package k3s
 
 import (
+	"bytes"
 	"fmt"
+	"html/template"
 
 	"github.com/containers/common/pkg/completion"
 	"github.com/containers/podman/v5/cmd/podman/registry"
@@ -40,10 +42,9 @@ func init() {
 		Parent:  k3sCmd,
 	})
 	flags := joinCmd.Flags()
-	cfg := registry.PodmanConfig()
 
 	TokenFlagName := "token"
-	flags.StringVar(&joinOpts.Token, TokenFlagName, cfg.ContainersConfDefaultsRO.Machine.User, "Username used in image")
+	flags.StringVar(&joinOpts.Token, TokenFlagName, "", "Token used to join cluster")
 	_ = initCmd.RegisterFlagCompletionFunc(TokenFlagName, completion.AutocompleteDefault)
 
 }
@@ -94,8 +95,8 @@ func join(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if !validVM && initOpts.Username == "" {
-		initOpts.Username, err = remoteConnectionUsername()
+	if !validVM && joinOpts.Username == "" {
+		joinOpts.Username, err = remoteConnectionUsername()
 		if err != nil {
 			return err
 		}
@@ -109,12 +110,27 @@ func join(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("vm %q is not running", mc.Name)
 	}
 
-	username := initOpts.Username
+	username := joinOpts.Username
 	if username == "" {
 		username = mc.SSH.RemoteUsername
 	}
 
-	initOpts.Args = []string{"curl -sfL https://get.k3s.io | K3S_URL=\"https://" + joinOpts.Master + ":6443\" K3S_TOKEN=\"" + joinOpts.Token + "\" sh -"}
-	err = machine.CommonSSHShell(username, mc.SSH.IdentityPath, mc.Name, mc.SSH.Port, initOpts.Args)
+	tmpl := `curl -sfL https://get.k3s.io | K3S_URL="https://{{.Master}}:6443" K3S_TOKEN="{{.Token}}" sh -`
+
+	// Parse the template
+	t, err := template.New("shellCommand").Parse(tmpl)
+	if err != nil {
+		panic(err)
+	}
+
+	// Execute the template with the struct
+	var result bytes.Buffer
+	if err := t.Execute(&result, joinOpts); err != nil {
+		panic(err)
+	}
+
+	joinOpts.Args = []string{result.String()}
+	fmt.Println("command line: " + result.String())
+	err = machine.CommonSSHShell(username, mc.SSH.IdentityPath, mc.Name, mc.SSH.Port, joinOpts.Args)
 	return utils.HandleOSExecError(err)
 }
